@@ -1,12 +1,25 @@
-import React, { useState, useEffect } from "react";
+import { Route, Routes } from "react-router-dom";
+
+import HomePage from "./pages/home/HomePage";
+import LoginPage from "./pages/auth/login/LoginPage";
+import SignUpPage from "./pages/auth/signup/SignUpPage";
+import Sidebar from "./components/common/Sidebar";
+import RightPanel from "./components/common/RightPanel";
+import NotificationPage from "./pages/notification/NotificationPage";
+import ProfilePage from "./pages/profile/ProfilePage";
+
 function App() {
   return (
-    <div className="App h-screen p-4">
-      <div className="p-4">
-        <h1 className="text-2xl ">Hello, world!</h1>
-        <button className="btn ">btn</button>
-        <p>This is an example of dark mode with Tailwind CSS.</p>
-      </div>
+    <div className="flex max-w-6xl mx-auto">
+      <Sidebar />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/signup" element={<SignUpPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/notifications" element={<NotificationPage />} />
+        <Route path="/profile/:username" element={<ProfilePage />} />
+      </Routes>
+      <RightPanel />
     </div>
   );
 }

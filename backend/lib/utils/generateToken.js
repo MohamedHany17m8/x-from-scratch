@@ -3,26 +3,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const generateToken = (req, res, next) => {
-  const { userId } = req.body;
-
-  if (!userId) {
-    return res.status(400).send("User ID is required");
-  }
-
-  const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+const generateToken = (userId, res) => {
+  const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: "15d",
   });
 
-  const cookieOptions = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV !== "development",
-    sameSite: "strict",
-    maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days
-  };
-
-  res.cookie("jwt", token, cookieOptions);
-  next();
+  res.cookie("jwt", token, {
+    maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
+    httpOnly: true, // prevent XSS attacks (cross-site scripting attacks)
+    sameSite: "strict", // prevent CSRF attacks (cross-site request forgery attacks)
+    secure: process.env.NODE_ENV !== "development", // use HTTPS in production
+  });
 };
 
 export default generateToken;

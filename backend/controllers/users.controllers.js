@@ -1,37 +1,50 @@
 import User from "../models/user.model.js";
 import Notification from "../models/notification.model.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { v2 as cloudinary } from "cloudinary";
 
 // Get user profile by username
 export const getUserProfile = async (req, res) => {
+  const { username } = req.params;
+
   try {
-    const { username } = req.params;
     const user = await User.findOne({ username }).select("-password");
-    if (!user) {
-      return res.status(404).send("User not found");
-    }
+    if (!user) return res.status(404).json({ error: "User not found" });
+
     res.status(200).json(user);
   } catch (error) {
-    res.status(500).send("Error getting user profile");
+    console.log("Error in getUserProfile: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 // Get suggested users
 export const getSuggestedUsers = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("following");
-    const followingIds = user.following;
+    const userId = req.user._id;
 
-    const users = await User.find({
-      _id: { $nin: [...followingIds, req.user._id] },
-    })
-      .select("-password")
-      .limit(10); // Example: limit to 10 suggested users
+    const usersFollowedByMe = await User.findById(userId).select("following");
 
-    res.status(200).json(users);
+    const users = await User.aggregate([
+      {
+        $match: {
+          _id: { $ne: userId },
+        },
+      },
+      { $sample: { size: 10 } },
+    ]);
+
+    const filteredUsers = users.filter(
+      (user) => !usersFollowedByMe.following.includes(user._id)
+    );
+    const suggestedUsers = filteredUsers.slice(0, 4);
+
+    suggestedUsers.forEach((user) => (user.password = null));
+
+    res.status(200).json(suggestedUsers);
   } catch (error) {
-    res.status(500).send("Error getting suggested users");
+    console.log("Error in getSuggestedUsers: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -39,123 +52,117 @@ export const getSuggestedUsers = async (req, res) => {
 export const followUnfollowUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(req.user._id);
-    const targetUser = await User.findById(id);
+    const userToModify = await User.findById(id);
+    const currentUser = await User.findById(req.user._id);
 
-    if (!targetUser) {
-      return res.status(404).send("User not found");
+    if (id === req.user._id.toString()) {
+      return res
+        .status(400)
+        .json({ error: "You can't follow/unfollow yourself" });
     }
 
-    // Ensure the user cannot follow themselves
-    if (user._id.equals(targetUser._id)) {
-      return res.status(400).send("You cannot follow yourself");
+    if (!userToModify || !currentUser) {
+      return res.status(400).json({ error: "User not found" });
     }
 
-    const isFollowing = user.following.includes(id);
+    const isFollowing = currentUser.following.includes(id);
 
     if (isFollowing) {
-      user.following.pull(id);
-      targetUser.followers.pull(user._id);
+      // Unfollow the user
+      await User.findByIdAndUpdate(id, { $pull: { followers: req.user._id } });
+      await User.findByIdAndUpdate(req.user._id, { $pull: { following: id } });
+
+      res.status(200).json({ message: "User unfollowed successfully" });
     } else {
-      user.following.push(id);
-      targetUser.followers.push(user._id);
+      // Follow the user
+      await User.findByIdAndUpdate(id, { $push: { followers: req.user._id } });
+      await User.findByIdAndUpdate(req.user._id, { $push: { following: id } });
 
-      // Create a notification for the follow action
-      const notification = new Notification({
-        from: user._id,
-        to: targetUser._id,
+      // Send notification to the user
+      const newNotification = new Notification({
         type: "follow",
+        from: req.user._id,
+        to: userToModify._id,
       });
-      await notification.save();
+
+      await newNotification.save();
+
+      res.status(200).json({ message: "User followed successfully" });
     }
-
-    await user.save();
-    await targetUser.save();
-
-    res.status(200).send("Follow/unfollow successful");
   } catch (error) {
-    console.log(error);
-    res.status(500).send("Error following/unfollowing user");
+    console.log("Error in followUnfollowUser: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const updateUser = async (req, res) => {
-  try {
-    const {
-      username,
-      email,
-      currentPassword,
-      newPassword,
-      fullName,
-      profileImg,
-      coverImg,
-      bio,
-      link,
-    } = req.body;
-    const user = await User.findById(req.user._id);
+  const { fullName, email, username, currentPassword, newPassword, bio, link } =
+    req.body;
+  let { profileImg, coverImg } = req.body;
+  const userId = req.user._id;
 
-    if (!user) {
-      return res.status(404).send("User not found");
+  try {
+    let user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (
+      (!newPassword && currentPassword) ||
+      (!currentPassword && newPassword)
+    ) {
+      return res.status(400).json({
+        error: "Please provide both current password and new password",
+      });
     }
 
-    if (currentPassword) {
+    if (currentPassword && newPassword) {
       const isMatch = await bcrypt.compare(currentPassword, user.password);
       if (!isMatch) {
-        return res.status(400).send("Current password is incorrect");
+        return res.status(400).json({ error: "Current password is incorrect" });
       }
+      if (newPassword.length < 6) {
+        return res.status(400).json({
+          error: "Password must be at least 6 characters long",
+        });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(newPassword, salt);
     }
 
-    // Update user details
-    user.username = username || user.username;
-    user.email = email || user.email;
+    if (profileImg) {
+      if (user.profileImg) {
+        await cloudinary.uploader.destroy(
+          user.profileImg.split("/").pop().split(".")[0]
+        );
+      }
+      const uploadedResponse = await cloudinary.uploader.upload(profileImg);
+      profileImg = uploadedResponse.secure_url;
+    }
+
+    if (coverImg) {
+      if (user.coverImg) {
+        await cloudinary.uploader.destroy(
+          user.coverImg.split("/").pop().split(".")[0]
+        );
+      }
+      const uploadedResponse = await cloudinary.uploader.upload(coverImg);
+      coverImg = uploadedResponse.secure_url;
+    }
+
     user.fullName = fullName || user.fullName;
+    user.email = email || user.email;
+    user.username = username || user.username;
     user.bio = bio || user.bio;
     user.link = link || user.link;
+    user.profileImg = profileImg || user.profileImg;
+    user.coverImg = coverImg || user.coverImg;
 
-    // Upload profile image to Cloudinary if provided
-    if (profileImg) {
-      // Destroy old profile image if it exists
-      if (user.profileImg) {
-        const publicId = user.profileImg.split("/").pop().split(".")[0];
-        await cloudinary.uploader.destroy(`profile_images/${publicId}`);
-      }
-      const result = await cloudinary.uploader.upload(profileImg, {
-        folder: "profile_images",
-      });
-      user.profileImg = result.secure_url;
-    }
+    user = await user.save();
+    user.password = null;
 
-    // Upload cover image to Cloudinary if provided
-    if (coverImg) {
-      // Destroy old cover image if it exists
-      if (user.coverImg) {
-        const publicId = user.coverImg.split("/").pop().split(".")[0];
-        await cloudinary.uploader.destroy(`cover_images/${publicId}`);
-      }
-      const result = await cloudinary.uploader.upload(coverImg, {
-        folder: "cover_images",
-      });
-      user.coverImg = result.secure_url;
-    }
-
-    // Update password if new password is provided
-    if (newPassword) {
-      if (newPassword.length < 8) {
-        return res
-          .status(400)
-          .send("New password must be at least 8 characters long");
-      }
-      user.password = await bcrypt.hash(newPassword, 10);
-    }
-
-    await user.save();
-
-    // Exclude password from the response
-    const { password, ...userWithoutPassword } = user.toObject();
-
-    res.status(200).json(userWithoutPassword);
+    return res.status(200).json(user);
   } catch (error) {
-    console.log(error);
-    res.status(500).send("Error updating user profile");
+    console.log("Error in updateUser: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

@@ -10,11 +10,11 @@ export const getAllPosts = async (req, res) => {
       .populate("user", "username profileImg")
       .sort({ createdAt: -1 });
     if (posts.length === 0) {
-      return res.status(404).send("No posts found");
+      return res.status(404).json({ error: "No posts found" });
     }
     res.status(200).json(posts);
   } catch (error) {
-    res.status(500).send("Error getting posts");
+    res.status(500).json({ error: "Error getting posts" });
   }
 };
 
@@ -50,11 +50,11 @@ export const getLikedPosts = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).populate("likedPosts");
     if (!user) {
-      return res.status(404).send("User not found");
+      return res.status(404).json({ error: "User not found" });
     }
     res.status(200).json(user.likedPosts);
   } catch (error) {
-    res.status(500).send("Error getting liked posts");
+    res.status(500).json({ error: "Error getting liked posts" });
   }
 };
 
@@ -64,18 +64,18 @@ export const getUserPosts = async (req, res) => {
     const { username } = req.params;
     const user = await User.findOne({ username }).select("_id");
     if (!user) {
-      return res.status(404).send("User not found");
+      return res.status(404).json({ error: "User not found" });
     }
 
     const posts = await Post.find({ user: user._id })
       .populate("user", "username profileImg")
       .sort({ createdAt: -1 });
     if (posts.length === 0) {
-      return res.status(404).send("No posts found");
+      return res.status(404).json({ error: "No posts found" });
     }
     res.status(200).json(posts);
   } catch (error) {
-    res.status(500).send("Error getting posts");
+    res.status(500).json({ error: "Error getting posts" });
   }
 };
 
@@ -99,7 +99,7 @@ export const createPost = async (req, res) => {
     await newPost.save();
     res.status(201).json(newPost);
   } catch (error) {
-    res.status(500).send("Error creating post");
+    res.status(500).json({ error: "Error creating post" });
   }
 };
 
@@ -112,7 +112,7 @@ export const likeUnlikePost = async (req, res) => {
       "username profileImg"
     );
     if (!post) {
-      return res.status(404).send("Post not found");
+      return res.status(404).json({ error: "Post not found" });
     }
 
     const user = await User.findById(req.user._id);
@@ -123,7 +123,7 @@ export const likeUnlikePost = async (req, res) => {
       user.likedPosts.pull(post._id);
       await post.save();
       await user.save();
-      return res.status(200).send("Post unliked successfully");
+      return res.status(200).json({ message: "Post unliked successfully" });
     } else {
       post.likes.push(req.user._id);
       user.likedPosts.push(post._id);
@@ -138,10 +138,10 @@ export const likeUnlikePost = async (req, res) => {
       });
       await notification.save();
 
-      return res.status(200).send("Post liked successfully");
+      return res.status(200).json({ message: "Post liked successfully" });
     }
   } catch (error) {
-    res.status(500).send("Error liking/unliking post");
+    res.status(500).json({ error: "Error liking/unliking post" });
   }
 };
 
@@ -152,7 +152,7 @@ export const commentOnPost = async (req, res) => {
     const { text } = req.body;
     const post = await Post.findById(id);
     if (!post) {
-      return res.status(404).send("Post not found");
+      return res.status(404).json({ error: "Post not found" });
     }
 
     const comment = {
@@ -164,35 +164,39 @@ export const commentOnPost = async (req, res) => {
     await post.save();
     res.status(201).json(post);
   } catch (error) {
-    res.status(500).send("Error commenting on post");
+    res.status(500).json({ error: "Error commenting on post" });
   }
 };
 
 // Delete a post
 export const deletePost = async (req, res) => {
   try {
-    const { id } = req.params;
-    const post = await Post.findById(id);
+    const post = await Post.findById(req.params.id);
     if (!post) {
-      return res.status(404).send("Post not found");
+      return res.status(404).json({ error: "Post not found" });
     }
 
-    // Check if the user is the owner of the post
-    if (!post.user.equals(req.user._id)) {
-      return res.status(403).send("You are not authorized to delete this post");
+    if (post.user.toString() !== req.user._id.toString()) {
+      return res
+        .status(401)
+        .json({ error: "You are not authorized to delete this post" });
     }
 
-    // Destroy the image in Cloudinary if it exists
     if (post.img) {
-      const publicId = post.img.split("/").pop().split(".")[0];
-      await cloudinary.uploader.destroy(`post_images/${publicId}`);
+      try {
+        const imgId = post.img.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(imgId);
+      } catch (cloudinaryError) {
+        console.log("Error deleting image from Cloudinary:", cloudinaryError);
+        // Continue with post deletion even if image deletion fails
+      }
     }
 
-    // Delete the post from MongoDB
-    await Post.findByIdAndDelete(id);
-    res.status(200).send("Post deleted successfully");
+    await Post.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({ message: "Post deleted successfully" });
   } catch (error) {
-    console.log(error);
-    res.status(500).send("Error deleting post");
+    console.log("Error in deletePost controller: ", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };

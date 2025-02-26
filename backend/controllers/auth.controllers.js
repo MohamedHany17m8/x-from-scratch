@@ -1,156 +1,112 @@
-import User from "../models/user.model.js";
-import bcrypt from "bcrypt";
 import generateToken from "../lib/utils/generateToken.js";
+import User from "../models/user.model.js";
+import bcrypt from "bcryptjs";
 
-export const signup = async (req, res, next) => {
-  const { username, fullName, password, email } = req.body;
-
+export const signup = async (req, res) => {
   try {
-    // Check if email is valid
+    const { fullName, username, email, password } = req.body;
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).send("Invalid email format");
+      return res.status(400).json({ error: "Invalid email format" });
     }
 
-    // Check if email already exists
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ error: "Username is already taken" });
+    }
+
     const existingEmail = await User.findOne({ email });
     if (existingEmail) {
-      return res.status(400).send("Email already exists");
+      return res.status(400).json({ error: "Email is already taken" });
     }
 
-    // Check if username already exists
-    const existingUsername = await User.findOne({ username });
-    if (existingUsername) {
-      return res.status(400).send("Username already taken");
-    }
-
-    // Check if password is at least 8 characters long
-    if (password.length < 8) {
+    if (password.length < 6) {
       return res
         .status(400)
-        .send("Password must be at least 8 characters long");
+        .json({ error: "Password must be at least 6 characters long" });
     }
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create new user
     const newUser = new User({
-      username,
       fullName,
-      password: hashedPassword,
+      username,
       email,
+      password: hashedPassword,
     });
 
-    await newUser.save();
+    if (newUser) {
+      generateToken(newUser._id, res);
+      await newUser.save();
 
-    // Generate token and set cookie
-    req.body.userId = newUser._id;
-    generateToken(req, res, () => {
-      const {
-        _id,
-        username,
-        fullName,
-        email,
-        followers,
-        following,
-        profileImg,
-        coverImg,
-        bio,
-        link,
-        likedPosts,
-      } = newUser;
       res.status(201).json({
-        _id,
-        username,
-        fullName,
-        email,
-        followers,
-        following,
-        profileImg,
-        coverImg,
-        bio,
-        link,
-        likedPosts,
+        _id: newUser._id,
+        fullName: newUser.fullName,
+        username: newUser.username,
+        email: newUser.email,
+        followers: newUser.followers,
+        following: newUser.following,
+        profileImg: newUser.profileImg,
+        coverImg: newUser.coverImg,
       });
-    });
+    } else {
+      res.status(400).json({ error: "Invalid user data" });
+    }
   } catch (error) {
-    res.status(500).send("Error during signup");
+    console.log("Error in signup controller", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const login = async (req, res) => {
-  const { username, password } = req.body;
-
   try {
-    // Check if user exists by username
+    const { username, password } = req.body;
     const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(400).send("Invalid username");
+    const isPasswordCorrect = await bcrypt.compare(
+      password,
+      user?.password || ""
+    );
+
+    if (!user || !isPasswordCorrect) {
+      return res.status(400).json({ error: "Invalid username or password" });
     }
 
-    // Check if password is correct
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).send("Invalid password");
-    }
+    generateToken(user._id, res);
 
-    // Generate token and set cookie
-    req.body.userId = user._id;
-    generateToken(req, res, () => {
-      const {
-        _id,
-        username,
-        fullName,
-        email,
-        followers,
-        following,
-        profileImg,
-        coverImg,
-        bio,
-        link,
-        likedPosts,
-      } = user;
-      res.status(200).json({
-        _id,
-        username,
-        fullName,
-        email,
-        followers,
-        following,
-        profileImg,
-        coverImg,
-        bio,
-        link,
-        likedPosts,
-      });
+    res.status(200).json({
+      _id: user._id,
+      fullName: user.fullName,
+      username: user.username,
+      email: user.email,
+      followers: user.followers,
+      following: user.following,
+      profileImg: user.profileImg,
+      coverImg: user.coverImg,
     });
   } catch (error) {
-    res.status(500).send("Error during login");
+    console.log("Error in login controller", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const logout = async (req, res) => {
   try {
-    res.clearCookie("jwt", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== "development",
-      sameSite: "strict",
-    });
-    res.status(200).send("Logout successful");
+    res.cookie("jwt", "", { maxAge: 0 });
+    res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
-    res.status(500).send("Error during logout");
+    console.log("Error in logout controller", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("-password");
-    if (!user) {
-      return res.status(404).send("User not found");
-    }
     res.status(200).json(user);
   } catch (error) {
-    res.status(500).send("Error getting user");
+    console.log("Error in getMe controller", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

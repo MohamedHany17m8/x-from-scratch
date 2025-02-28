@@ -177,15 +177,22 @@ export const deletePost = async (req, res) => {
     }
 
     if (post.user.toString() !== req.user._id.toString()) {
-      return res
-        .status(401)
-        .json({ error: "You are not authorized to delete this post" });
+      return res.status(401).json({
+        error: "You are not authorized to delete this post",
+      });
     }
 
     if (post.img) {
+      // Extract public_id from Cloudinary URL
+      // URL format: https://res.cloudinary.com/your-cloud-name/image/upload/v1234567890/folder_name/image_public_id.jpg
+      const publicId = post.img
+        .split("/")
+        .slice(-2) // Get the last two segments (folder and filename)
+        .join("/") // Join them back with "/"
+        .split(".")[0]; // Remove the file extension
+
       try {
-        const imgId = post.img.split("/").pop().split(".")[0];
-        await cloudinary.uploader.destroy(imgId);
+        await cloudinary.uploader.destroy(publicId);
       } catch (cloudinaryError) {
         console.log("Error deleting image from Cloudinary:", cloudinaryError);
         // Continue with post deletion even if image deletion fails

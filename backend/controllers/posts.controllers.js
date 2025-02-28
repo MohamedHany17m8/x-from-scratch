@@ -7,7 +7,8 @@ import Notification from "../models/notification.model.js";
 export const getAllPosts = async (req, res) => {
   try {
     const posts = await Post.find()
-      .populate("user", "username profileImg")
+      .populate("user", "username profileImg fullName")
+      .populate("comments.user", "username profileImg fullName")
       .sort({ createdAt: -1 });
     if (posts.length === 0) {
       return res.status(404).json({ error: "No posts found" });
@@ -29,14 +30,8 @@ export const getFollowingPosts = async (req, res) => {
 
     const feedPosts = await Post.find({ user: { $in: following } })
       .sort({ createdAt: -1 })
-      .populate({
-        path: "user",
-        select: "-password",
-      })
-      .populate({
-        path: "comments.user",
-        select: "-password",
-      });
+      .populate("user", "username profileImg fullName")
+      .populate("comments.user", "username profileImg fullName");
 
     res.status(200).json(feedPosts);
   } catch (error) {
@@ -68,7 +63,8 @@ export const getUserPosts = async (req, res) => {
     }
 
     const posts = await Post.find({ user: user._id })
-      .populate("user", "username profileImg")
+      .populate("user", "username profileImg fullName")
+      .populate("comments.user", "username profileImg fullName")
       .sort({ createdAt: -1 });
     if (posts.length === 0) {
       return res.status(404).json({ error: "No posts found" });
@@ -162,7 +158,13 @@ export const commentOnPost = async (req, res) => {
 
     post.comments.push(comment);
     await post.save();
-    res.status(201).json(post);
+
+    // Fetch the updated post with populated fields
+    const updatedPost = await Post.findById(id)
+      .populate("user", "username profileImg fullName")
+      .populate("comments.user", "username profileImg fullName");
+
+    res.status(201).json(updatedPost);
   } catch (error) {
     res.status(500).json({ error: "Error commenting on post" });
   }

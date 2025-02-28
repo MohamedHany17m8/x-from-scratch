@@ -60,17 +60,41 @@ const Post = ({ post, feedType, username, userId }) => {
         }
         return data;
       } catch (error) {
-        throw new Error(error);
+        throw new Error(error.message);
       }
     },
-    onSuccess: (updatedLikes) => {
-      // Update cache directly instead of refetching
-      queryClient.setQueryData(["posts"], (oldData) => {
-        return oldData.map((p) => {
-          if (p._id === post._id) {
-            return { ...p, likes: updatedLikes };
+    onSuccess: () => {
+      // Update all post-related queries
+      const queryCache = queryClient.getQueryCache();
+      const postQueries = queryCache.findAll(["posts"]);
+
+      postQueries.forEach((query) => {
+        queryClient.setQueryData(query.queryKey, (oldData) => {
+          // Handle if oldData is not an array (single post)
+          if (!oldData) return oldData;
+          if (!Array.isArray(oldData)) {
+            if (oldData._id === post._id) {
+              return {
+                ...oldData,
+                likes: isLiked
+                  ? oldData.likes.filter((id) => id !== authUser._id)
+                  : [...oldData.likes, authUser._id],
+              };
+            }
+            return oldData;
           }
-          return p;
+          // Handle array of posts
+          return oldData.map((p) => {
+            if (p._id === post._id) {
+              return {
+                ...p,
+                likes: isLiked
+                  ? p.likes.filter((id) => id !== authUser._id)
+                  : [...p.likes, authUser._id],
+              };
+            }
+            return p;
+          });
         });
       });
     },

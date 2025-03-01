@@ -7,7 +7,7 @@ import usersRoutes from "./routes/users.routes.js";
 import postsRoutes from "./routes/posts.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
 import { v2 as cloudinary } from "cloudinary";
-
+import path from "path";
 dotenv.config();
 
 const app = express();
@@ -19,7 +19,7 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
+const __dirname = path.resolve();
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: "5mb" }));
 
@@ -34,9 +34,13 @@ app.use("/api/users", usersRoutes);
 app.use("/api/posts", postsRoutes);
 app.use("/api/notifications", notificationsRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
-});
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "/frontend/dist")));
+
+  app.get("*", (req, res) => {
+    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
+  });
+}
 
 connectMongoDb().then(() => {
   app.listen(port, () => {

@@ -39,7 +39,7 @@ const Posts = ({ feedType, username, userId }) => {
 
         return data;
       } catch (error) {
-        throw new Error(error);
+        throw new Error(error.message);
       }
     },
   });
@@ -57,13 +57,25 @@ const Posts = ({ feedType, username, userId }) => {
           <PostSkeleton />
         </div>
       )}
-      {!isLoading && !isRefetching && posts?.length === 0 && (
-        <p className="text-center my-4">No posts in this tab. Switch 👻</p>
+      {!isLoading && !isRefetching && (!posts || posts.length === 0) && (
+        <p className="text-center my-4">
+          {feedType === "likes"
+            ? "No liked posts yet"
+            : feedType === "following"
+            ? "No posts from people you follow"
+            : "No posts yet"}
+        </p>
       )}
-      {!isLoading && !isRefetching && posts && (
+      {!isLoading && !isRefetching && posts && posts.length > 0 && (
         <div>
           {posts.map((post) => (
-            <Post key={post._id} post={post} />
+            <Post
+              key={post._id}
+              post={post}
+              feedType={feedType}
+              username={username}
+              userId={userId}
+            />
           ))}
         </div>
       )}

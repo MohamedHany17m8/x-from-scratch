@@ -24,10 +24,7 @@ cloudinary.config({
 // Add CORS configuration with appropriate origins
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://your-frontend-domain.vercel.app",
-    ], // Update with your actual frontend domain
+    origin: ["http://localhost:3000", "https://x-clone-seven-khaki.vercel.app"], // Update with your actual frontend domain
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
